@@ -7,11 +7,17 @@ from collections import Counter
 import psycopg2
 from datetime import datetime
 
-dbname = "mydb"
-user = "username"
-password = "1234"
-host = "localhost"
-port = "5432"
+def readConfig():
+    with open('config.txt', 'r') as f:
+        vars=f.read().strip().split()
+    dbname = vars[2]
+    user = vars[5]
+    password = vars[8]
+    host = vars[11]
+    port = vars[14]
+    return dbname,user,password,host,port
+
+dbname,user,password,host,port=readConfig()
 
 model = torch.load('best.torchscript')
 ageModel = torch.load('bestAge.torchscript')
@@ -23,25 +29,27 @@ transform = T.Compose([
 
 detector = MTCNN()
 
-def insert_to_database(query):
+def insert_to_database(statement=None,queries=None):
     try:
         connection = psycopg2.connect(
             dbname=dbname,
             user=user,
             password=password,
             host=host,
-            port=port
-        )
+            port=port )
         
         cursor = connection.cursor()
-        
-        sql_query = query
 
-        cursor.execute(sql_query)
+        if queries:
+            for query in queries:
+                cursor.execute(query)
+        elif statement:
+            cursor.execute(statement)
 
         cursor.close()
         connection.commit()
         connection.close()
+        print("Commit Successful")
 
     except (Exception, psycopg2.Error) as error:
         print("Error while connecting to PostgreSQL:", error)
@@ -76,6 +84,7 @@ def predict_image(filepath):
 
     predictionsGender=[]
     predictionsAge=[]
+    queries = []
 
     for result in results:
         x, y, w, h = result['box']
@@ -89,7 +98,7 @@ def predict_image(filepath):
         predictionsGender.append(prediction_text)
         predictionsAge.append(age_prediction)
 
-        insert_to_database(f"""SELECT InsertData('ahmed','uploaded','{filepath}',
+        queries.append(f"""SELECT InsertData('ahmed','uploaded','{filepath}',
                                 '[{x},{y},{x+w},{y+h}]','{prediction_text}',{gender_confidence},
                                 '{age_prediction}',{age_confidence});""")
 
@@ -125,7 +134,7 @@ def predict_image(filepath):
         text_y = base_y - (i * 40)
         cv2.putText(image, count_text, (text_x, text_y), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 2)
 
-    print('Commit Successful')
+    insert_to_database(queries=queries)
 
     return Image.fromarray(image)
 
@@ -149,10 +158,9 @@ def predict_camera(frame):
 
         if predict_camera.frame_counter % 30 == 0:
             current_time = datetime.now().strftime('%Y-%m-%d %H:%M')
-            insert_to_database(f"""SELECT InsertData('ahmed','Camera','Camera:{current_time}',
+            insert_to_database(statement=f"""SELECT InsertData('ahmed','Camera','Camera:{current_time}',
                                     '[{x},{y},{x+w},{y+h}]','{gender_pred}',{gender_confidence},
                                     '{age_prediction}',{age_confidence});""")
-            print('Commit Successful')
     if predict_camera.frame_counter == 30:
         predict_camera.frame_counter = 0
 

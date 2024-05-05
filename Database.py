@@ -6,6 +6,16 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Table, Image,PageBr
 import matplotlib.pyplot as plt
 from reportlab.lib import colors
 
+def readConfig():
+    with open('config.txt', 'r') as f:
+        vars=f.read().strip().split()
+    dbname = vars[2]
+    user = vars[5]
+    password = vars[8]
+    host = vars[11]
+    port = vars[14]
+    return dbname,user,password,host,port
+
 def callDatabase(query,startdate,enddate, dbname, user, password, host, port):
     try:
         connection = psycopg2.connect(
@@ -161,7 +171,8 @@ def style_table(table):
     table.setStyle(TableStyle(style))
 
 
-def generate_report(gendconf=None, ageConf=None, filename=None,startdate=None,enddate=None, dbname='mydb', user='username', password='1234', host='localhost', port='5432'):
+def generate_report(gendconf=None, ageConf=None, filename=None,startdate=None,enddate=None):
+    dbname,user,password,host,port=readConfig()
     genDF, ageDF, bothDF1, bothDF2 = makestatement(gendconf, ageConf, startdate,enddate, dbname, user, password, host, port)
 
     if filename is None:
