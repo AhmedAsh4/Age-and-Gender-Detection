@@ -1,11 +1,12 @@
 import cv2
 import torch
 import torchvision.transforms as T
-from mtcnn import MTCNN
 from PIL import Image
 from collections import Counter
 import psycopg2
 from datetime import datetime
+from mtcnn import MTCNN
+from ultralytics import YOLO
 
 def readConfig():
     with open('config.txt', 'r') as f:
@@ -27,6 +28,7 @@ transform = T.Compose([
     T.ToTensor(),
 ])
 
+detectorcam = YOLO("yolov8n-face.pt")
 detector = MTCNN()
 
 def insert_to_database(statement=None,queries=None):
@@ -69,8 +71,8 @@ def predict_age(face):
     return age_prediction,torch.max(output).item()
 
 def predictions(image,x,y,w,h):
-    cv2.rectangle(image, (x, y), (x+w, y+h), (0, 255, 0), 2)
-    face_roi = image[y:y+h, x:x+w]
+    cv2.rectangle(image, (x, y), (w, h), (0, 255, 0), 2)
+    face_roi = image[y:h, x:w]
     pil_image = Image.fromarray(face_roi)
     gender_prediction,gender_confidence = predict_gender(pil_image)
     age_prediction,age_confidence = predict_age(pil_image)
@@ -93,7 +95,7 @@ def predict_image(filepath):
         if confidence < 0.9:
             continue
 
-        gender_prediction,gender_confidence,age_prediction,age_confidence,image = predictions(image,x,y,w,h)
+        gender_prediction,gender_confidence,age_prediction,age_confidence,image = predictions(image,x,y,w+x,h+y)
         prediction_text = ("F" if gender_prediction > 0 else "M")
         predictionsGender.append(prediction_text)
         predictionsAge.append(age_prediction)
@@ -144,24 +146,25 @@ def predict_camera(frame):
     
     predict_camera.frame_counter += 1
 
-    gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
-    face_locations = face_cascade.detectMultiScale(gray_frame, scaleFactor=1.1, minNeighbors=5, minSize=(30, 30))
+    input_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    results = detectorcam(input_frame,verbose=False)
 
-    for (x, y, w, h) in face_locations:
-        gender_prediction, gender_confidence, age_prediction, age_confidence, frame = predictions(frame, x, y, w, h)
-        gender_pred = "F" if gender_prediction > 0 else "M"
-        prediction_text = f"{gender_pred} Age: {age_prediction}"
+    for r in results:
+        for detection in r.boxes.data.tolist():
+            x, y, w, h, _, _ = map(int, detection)
+            gender_prediction, gender_confidence, age_prediction, age_confidence, frame = predictions(frame, x, y, w, h)
+            gender_pred = "F" if gender_prediction > 0 else "M"
+            prediction_text = f"{gender_pred} Age: {age_prediction}"
 
-        cv2.rectangle(frame, (x, y), (x+w, y+h), (0, 255, 0), 2)
-        cv2.putText(frame, prediction_text, (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0), 2)
+            cv2.rectangle(frame, (x, y), (w, h), (0, 255, 0), 2)
+            cv2.putText(frame, prediction_text, (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0), 2)
 
-        if predict_camera.frame_counter % 30 == 0:
-            current_time = datetime.now().strftime('%Y-%m-%d %H:%M')
-            insert_to_database(statement=f"""SELECT InsertData('ahmed','Camera','Camera:{current_time}',
-                                    '[{x},{y},{x+w},{y+h}]','{gender_pred}',{gender_confidence},
-                                    '{age_prediction}',{age_confidence});""")
-    if predict_camera.frame_counter == 30:
-        predict_camera.frame_counter = 0
+            if predict_camera.frame_counter % 30 == 0:
+                current_time = datetime.now().strftime('%Y-%m-%d %H:%M')
+                insert_to_database(statement=f"""SELECT InsertData('ahmed','Camera','Camera:{current_time}',
+                                        '[{x},{y},{w},{h}]','{gender_pred}',{gender_confidence},
+                                        '{age_prediction}',{age_confidence});""")
+        if predict_camera.frame_counter == 30:
+            predict_camera.frame_counter = 0
 
     return frame
