@@ -1,4 +1,4 @@
-# Face Detection and Classification for Age and Gender Detection
+# Age and Gender Detection
 
 ## Project Overview
 This project, developed as part of my graduation project, focuses on creating a comprehensive system for face detection and classification. The system can detect faces in images, classify them by age and gender, and store the results in a PostgreSQL database. Additionally, it includes a graphical user interface (GUI) for ease of use and provides an option to extract reports from the stored data.
